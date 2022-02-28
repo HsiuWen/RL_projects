@@ -1,4 +1,6 @@
 gym[atari,accept-rom-license]==0.22.0
 pyglet
-gym pyvirtualdisplay
+gym-retro
+pyvirtualdisplay
 pygame
+opencv-python
