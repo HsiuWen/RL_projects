@@ -4,3 +4,4 @@ gym-retro
 pyvirtualdisplay
 pygame
 opencv-python
+tensorboard
