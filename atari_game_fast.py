@@ -5,7 +5,7 @@ import math
 import numpy as np
 from collections import namedtuple, deque
 import matplotlib.pyplot as plt
-
+import cv2
 import gym
 from gym import wrappers
 
@@ -15,11 +15,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torch.autograd import Variable
+from torchvision import transforms
 from tensorboardX import SummaryWriter
 
 import pdb
-from skimage.transform import resize
-from skimage.color import rgb2gray
 
 # if gpu is to be used
 use_cuda = torch.cuda.is_available()
@@ -118,12 +117,24 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
+pre_process = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Grayscale(),
+    transforms.Resize([84,84]),
+    #transforms.Normalize(0,255)
+    ] )
+
 class Agent(object):
     def __init__(self, args, render=False):
         self.env = gym.make(args.env)
         # self.env = gym.wrappers.Monitor(self.env, directory='monitors/'+args.env, force=True)
-        #n_in = self.env.observation_space.shape[0]
-        #n_out = self.env.action_space.n
+        n_in = self.env.observation_space.shape[0]
+        if len(self.env.observation_space.shape)==3: # observation is an image
+            in_weight=self.env.observation_space.shape[0]
+            in_height=self.env.observation_space.shape[1]
+            in_channel = self.env.observation_space.shape[2]
+            n_in = in_weight*in_height*in_channel
+        n_out = self.env.action_space.n
         self.batch_size = args.batch_size
 
         # type of function approximator to use
@@ -207,8 +218,9 @@ class Agent(object):
         next_state = np.zeros((4,84,84))
 
         state_single = self.env.reset()
-        state_single = rgb2gray(resize(state_single,(84,84)))
-            
+        #state_single = rgb2gray(resize(state_single,(84,84)))
+        state_single = pre_process(state_single)
+
         state[0,:,:] = state_single
         state[1,:,:] = state_single
         state[2,:,:] = state_single
@@ -221,7 +233,8 @@ class Agent(object):
             #Executing a random policy
             action = LongTensor([[random.randrange(self.env.action_space.n)]])
             next_state_single, reward, is_terminal, _ = self.env.step(action[0,0])                
-            next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
+            #next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
+            next_state_single = pre_process(next_state_single)
 
             next_state[0,:,:] = state[1,:,:]
             next_state[1,:,:] = state[2,:,:]
@@ -261,7 +274,8 @@ class Agent(object):
             #If the next_state is terminal, then you reset it
             if is_terminal:
                 state_single = self.env.reset()
-                state_single = rgb2gray(resize(state_single,(84,84)))
+                #state_single = rgb2gray(resize(state_single,(84,84)))
+                state_single = pre_process(state_single)
 
                 state[0,:,:] = state_single
                 state[1,:,:] = state_single
@@ -276,7 +290,6 @@ class Agent(object):
     def testing_random_play(self):
 
         state = self.env.reset()
-        state = rgb2gray(resize(state,(84,84))) 
         #state is 210,160,3            
 
         for i in range(1000):
@@ -292,7 +305,7 @@ class Agent(object):
     def play_episode(self, e, train=True):
 
         state_single = self.env.reset()
-        state_single = rgb2gray(resize(state_single,(84,84)))
+        state_single = pre_process(state_single)
             
         state = np.zeros((4,84,84))
         next_state = np.zeros((4,84,84))
@@ -311,7 +324,8 @@ class Agent(object):
             # print("action: ", action)
             next_state_single, reward, is_terminal, _ = self.env.step(action[0,0])
 
-            next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
+            #next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
+            next_state_single = pre_process(next_state_single)
             next_state[0,:,:] = state[1,:,:]
             next_state[1,:,:] = state[2,:,:]
             next_state[2,:,:] = state[3,:,:]
@@ -430,7 +444,8 @@ class Agent(object):
         for e in range(self.num_episodes):
             # print("----------- Episode {} -----------".format(e))
             self.play_episode(e,train=True)
-            if e%100 == 0:
+            if self.record_video >0 and e% self.record_video == 0:
+                out = cv2.VideoWriter(f'played_out/{arg.env}/project_{e}.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, size)
                 self.test(2)
 
 
@@ -475,6 +490,7 @@ def parse_arguments():
     parser.add_argument('--eps_decay', type=int, default=100000, help='e-greedy threshold decay')
     parser.add_argument('--logs', type=str, default = 'logs',  help='logs path')
     parser.add_argument('--memory_burn_limit', type=int,default=200, help='Till when to burn memory')
+    parser.add_argument('--record_video',type=int, default=10, help='Make record video every # episode')
     return parser.parse_args()
 
 def main():
@@ -496,7 +512,7 @@ def main():
     agent.test(num_episodes=100)
     print('----------- Completed Testing -----------')
 
-    pdb.set_trace()
+    #pdb.set_trace()
     agent.close()
 
     # plt.ioff()
@@ -505,10 +521,7 @@ def main():
 if __name__ == '__main__':
     main()
 
-
-
 #TODO
-#1) Verify is this correct--->>> rgb2gray(resize(state_single,(84,84)))
 #2) Storing none for next_state if it's terminal state during burning
 #3) Check is this required in burning memory.......            #while steps == self.memory_burn_limit and not is_terminal:
 #4) Take a look at the resized images and crop the center region
