@@ -136,6 +136,7 @@ class Agent(object):
             n_in = in_weight*in_height*in_channel
         n_out = self.env.action_space.n
         self.batch_size = args.batch_size
+        self.game_name = args.env
 
         # type of function approximator to use
         if args.model_type == 'Space_Invaders_CNN':        
@@ -264,13 +265,6 @@ class Agent(object):
             steps += 1
             state = next_state
 
-
-            #while steps == self.memory_burn_limit and not is_terminal:
-            #    #Executing a random policy
-            #    action = LongTensor([[random.randrange(self.env.action_space.n)]])
-            #    next_state, reward, is_terminal, _ = self.env.step(action[0,0])
-
-
             #If the next_state is terminal, then you reset it
             if is_terminal:
                 state_single = self.env.reset()
@@ -282,7 +276,6 @@ class Agent(object):
                 state[2,:,:] = state_single
                 state[3,:,:] = state_single
                     
-
         print('Memory filled, ready to start training now')
         print("-"*50)
 
@@ -305,6 +298,10 @@ class Agent(object):
     def play_episode(self, e, train=True):
 
         state_single = self.env.reset()
+        size = (state_single.shape[0],state_single.shape[1])
+        if self.record_video >0 and train == False and e%self.record_video == 0:
+            out = cv2.VideoWriter(f'played_out/{self.game_name}/project_{e}.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, size)
+
         state_single = pre_process(state_single)
             
         state = np.zeros((4,84,84))
@@ -319,6 +316,9 @@ class Agent(object):
         total_reward = 0
         # iterate till the terminal state is reached
         while True:
+            if self.record_video >0 and train == False and e%self.record_video == 0:
+                out.write(self.env.render('rgb_array'))
+                
             self.env.render(mode='rgb_array')
             action = self.select_action([state],train)
             # print("action: ", action)
@@ -331,10 +331,7 @@ class Agent(object):
             next_state[2,:,:] = state[3,:,:]
             next_state[3,:,:] = next_state_single
 
-
             total_reward += reward
-
-
 
             if is_terminal:
                 # store the transition in memory
@@ -444,9 +441,6 @@ class Agent(object):
         for e in range(self.num_episodes):
             # print("----------- Episode {} -----------".format(e))
             self.play_episode(e,train=True)
-            if self.record_video >0 and e% self.record_video == 0:
-                out = cv2.VideoWriter(f'played_out/{arg.env}/project_{e}.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, size)
-                self.test(2)
 
 
     def test(self,num_episodes):
