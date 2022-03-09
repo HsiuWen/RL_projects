@@ -129,6 +129,7 @@ class Agent(object):
         self.env = gym.make(args.env)
         # self.env = gym.wrappers.Monitor(self.env, directory='monitors/'+args.env, force=True)
         n_in = self.env.observation_space.shape[0]
+        ##TODO change code location and correct it back to the shape after preprocessing
         if len(self.env.observation_space.shape)==3: # observation is an image
             in_weight=self.env.observation_space.shape[0]
             in_height=self.env.observation_space.shape[1]
@@ -137,7 +138,7 @@ class Agent(object):
         n_out = self.env.action_space.n
         self.batch_size = args.batch_size
         self.game_name = args.env
-
+        self.record_video = args.record_video
         # type of function approximator to use
         if args.model_type == 'Space_Invaders_CNN':        
             self.model = Space_Invaders_CNN()
