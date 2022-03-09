@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--env","ALE/SpaceInvaders-v5","--record_video","5"]
+            "args": ["--env","ALE/SpaceInvaders-v5","--record_video","100","--num_episodes","1000"]
         }
     ]
 }

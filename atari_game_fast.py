@@ -135,6 +135,7 @@ class Agent(object):
             in_height=self.env.observation_space.shape[1]
             in_channel = self.env.observation_space.shape[2]
             n_in = in_weight*in_height*in_channel
+
         n_out = self.env.action_space.n
         self.batch_size = args.batch_size
         self.game_name = args.env
@@ -300,7 +301,7 @@ class Agent(object):
 
         state_single = self.env.reset()
         size = (state_single.shape[0],state_single.shape[1])
-        if self.record_video >0 and train == False and e%self.record_video == 0:
+        if self.record_video >0 and e%self.record_video == 0:
             out = cv2.VideoWriter(f'played_out/{self.game_name}/project_{e}.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, size)
 
         state_single = pre_process(state_single)
@@ -317,7 +318,7 @@ class Agent(object):
         total_reward = 0
         # iterate till the terminal state is reached
         while True:
-            if self.record_video >0 and train == False and e%self.record_video == 0:
+            if self.record_video >0 and e%self.record_video == 0:
                 out.write(self.env.render('rgb_array'))
                 
             self.env.render(mode='rgb_array')
@@ -360,7 +361,11 @@ class Agent(object):
                     #if steps %20 == 0:
                     print("Episode {} completed after {} steps | Total steps = {}".format(e,steps,self.steps_done))
                 self.episode_durations.append(steps)
-                # self.plot_durations()
+                self.plot_durations()
+                # self.plot_rewards()
+                if self.record_video >0 and e%self.record_video == 0:
+                    out.release()
+
                 return total_reward
 
     def optimize_model(self):
@@ -457,7 +462,7 @@ class Agent(object):
         # self.plot_rewards()
 
     def close(self):
-        self.env.render(close=True)
+        #self.env.render(close=True)
         self.env.close()
         plt.ioff()
         plt.show()
