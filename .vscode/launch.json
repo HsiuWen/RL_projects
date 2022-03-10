@@ -11,7 +11,8 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--env","ALE/SpaceInvaders-v5","--record_video","100","--num_episodes","1000"]
+            "args": ["--env","ALE/SpaceInvaders-v5","--record_video","100","--num_episodes","1000",
+                "--load_pretrained_model","False","--model_path","saved_models/ALE/SpaceInvaders-v5/model_trained_100.pt"]
         }
     ]
 }
