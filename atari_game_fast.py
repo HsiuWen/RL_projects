@@ -1,4 +1,5 @@
 import sys
+import os
 import argparse
 import random
 import math
@@ -140,6 +141,11 @@ class Agent(object):
         self.batch_size = args.batch_size
         self.game_name = args.env
         self.record_video = args.record_video
+        self.save_model_every_epoch = args.save_model_every_epoch
+
+        # writer to write data to tensorboard
+        self.writer = SummaryWriter()
+
         # type of function approximator to use
         if args.model_type == 'Space_Invaders_CNN':        
             self.model = Space_Invaders_CNN()
@@ -186,6 +192,11 @@ class Agent(object):
         self.avg_rewards = []
         self.memory_burn_limit = args.memory_burn_limit
 
+        if args.load_pretrained_model:
+            # load the previous trained agent
+            checkpoint = torch.load(args.model_path)
+            self.model.load_stae_dict(checkpoint(['model_state_dict']))
+            self.optimizer.load_state_dict(checkpoint(['optimizer_state_dict']))
         #pdb.set_trace()
 
     def select_action(self, state, train):
@@ -213,7 +224,8 @@ class Agent(object):
                action = self.model(Variable(state))
             return action.data.max(1)[1].view(1,1)
 
-
+    # Here we'lldeal with the empty memory problem: we pre-populate our memory by taking random actions 
+    # and storing the experience (state, action, reward, next_state).
     def burn_memory(self):
 
         steps = 0
@@ -337,11 +349,23 @@ class Agent(object):
 
             if is_terminal:
                 # store the transition in memory
+                
                 next_state = None
                 self.memory.store(FloatTensor([state]),
                                   action,
                                   None,
                                   FloatTensor([reward]))
+                if train:
+                    self.writer.add_scalar('total_reward/train', total_reward, e)
+                    self.writer.add_scalar('episode_duration/train', steps, e)
+                    self.episode_durations.append(steps)
+                    print("Episode {} completed after {} steps | Total steps = {}".format(e,steps,self.steps_done))
+                    if self.record_video >0 and e%self.record_video == 0:
+                        out.release()
+                    # self.plot_durations()
+                    # self.plot_rewards()  
+
+                return total_reward
             else:
                 self.memory.store(FloatTensor([state]),
                                   action,
@@ -353,20 +377,7 @@ class Agent(object):
                 self.optimize_model()
             # update state
             state = next_state
-            steps += 1
-            if is_terminal:
-                if train:
-                    # backprop and learn; otherwise just play the policy
-                    # self.optimize_model()
-                    #if steps %20 == 0:
-                    print("Episode {} completed after {} steps | Total steps = {}".format(e,steps,self.steps_done))
-                self.episode_durations.append(steps)
-                self.plot_durations()
-                # self.plot_rewards()
-                if self.record_video >0 and e%self.record_video == 0:
-                    out.release()
-
-                return total_reward
+            steps += 1  
 
     def optimize_model(self):
         # check if enough experience collected so far
@@ -416,6 +427,10 @@ class Agent(object):
         loss.backward()
         self.optimizer.step()
 
+        # TODO write average reward and loss after each batch training
+        self.writer.add_scalar('avg_reward/train', sum(current_Q), e)
+        self.writer.add_scalar('avg_loss/train', sum(loss), e)
+
     def plot_durations(self):
         durations = torch.FloatTensor(self.episode_durations)
         plt.figure(1)
@@ -446,7 +461,15 @@ class Agent(object):
         print("Going to be training for a total of {} episodes".format(self.num_episodes))
         for e in range(self.num_episodes):
             # print("----------- Episode {} -----------".format(e))
-            self.play_episode(e,train=True)
+            total_reward = self.play_episode(e,train=True) 
+            if self.save_model_every_epoch > 0 and e%self.save_model_every_epoch == 0:
+                # Save model to /saved_models/game_name/model_trained_epoch.pt
+                torch.save({
+                    'epoch': e,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'reward': total_reward,
+                    }, f'saved_models/{self.game_name}/model_trained_{e}.pt')
 
 
     def test(self,num_episodes):
@@ -491,6 +514,9 @@ def parse_arguments():
     parser.add_argument('--logs', type=str, default = 'logs',  help='logs path')
     parser.add_argument('--memory_burn_limit', type=int,default=200, help='Till when to burn memory')
     parser.add_argument('--record_video',type=int, default=10, help='Make record video every # episode')
+    parser.add_argument('--load_pretrained_model', type=int, default=0, help='load pretrained mode')
+    parser.add_argument('--save_model_every_epoch', type=int, default=10, help='Save model every amount of epochs')
+    parser.add_argument('--model_path',type=str,default="model_saved.pt", help='File path to the pretrained model')
     return parser.parse_args()
 
 def main():
@@ -512,11 +538,11 @@ def main():
     agent.test(num_episodes=100)
     print('----------- Completed Testing -----------')
 
-    #pdb.set_trace()
     agent.close()
 
-    # plt.ioff()
-    # plt.show()
+    ### Visualize the training progress by:
+    #  pip install tensorboard
+    #  tensorboard --logdir=runs
 
 if __name__ == '__main__':
     main()
