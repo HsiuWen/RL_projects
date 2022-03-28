@@ -15,7 +15,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
-from torch.autograd import Variable
 from torchvision import transforms
 from tensorboardX import SummaryWriter
 
@@ -30,9 +29,9 @@ Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward')
 
 
 
-class Space_Invaders_CNN(nn.Module):
+class CNN_2c2f(nn.Module):
     def __init__(self):
-        super(Space_Invaders_CNN, self).__init__()
+        super(CNN_2c2f, self).__init__()
         self.conv1 = nn.Conv2d(4,16,8,stride=4) #output will be 20x20 feature
         self.conv2 = nn.Conv2d(16,32,4,stride=2) #output will be 9x9
         self.fc1 = nn.Linear(32*81,256)
@@ -147,8 +146,8 @@ class Agent(object):
         self.writer = SummaryWriter()
 
         # type of function approximator to use
-        if args.model_type == 'Space_Invaders_CNN':        
-            self.model = Space_Invaders_CNN()
+        if args.model_type == 'CNN_2c2f':        
+            self.model = CNN_2c2f()
         elif args.model_type == 'linear':
             self.model = LinearQN(n_in, n_out)
         elif args.model_type == 'dqn':
@@ -214,14 +213,13 @@ class Agent(object):
             # explore or exploit?
             if random.random() > eps_threshold:
                 with torch.no_grad():
-                    action = self.model(Variable(state))
+                    action = self.model(state)
                 return action.data.max(1)[1].view(1,1)
             else:
-                return LongTensor([[random.randrange(self.env.action_space.n)]])
-                #return LongTensor([[random.randrange(2)]])
+                return random.randrange(self.env.action_space.n)
         else:
             with torch.no_grad():
-               action = self.model(Variable(state))
+               action = self.model(state)
             return action.data.max(1)[1].view(1,1)
 
     # Here we'lldeal with the empty memory problem: we pre-populate our memory by taking random actions 
@@ -244,10 +242,9 @@ class Agent(object):
 
         print('Starting to fill the memory with random policy')
         while steps < self.memory_burn_limit:
-
             #Executing a random policy
-            action = LongTensor([[random.randrange(self.env.action_space.n)]])
-            next_state_single, reward, is_terminal, _ = self.env.step(action[0,0])                
+            action = random.randrange(self.env.action_space.n)
+            next_state_single, reward, is_terminal, _ = self.env.step(action)                
             #next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
             next_state_single = pre_process(next_state_single)
 
@@ -256,22 +253,16 @@ class Agent(object):
             next_state[2,:,:] = state[3,:,:]
             next_state[3,:,:] = next_state_single
 
-            #self.memory.store(FloatTensor([state]),
-            #                  action,
-            #                  FloatTensor([next_state]),
-            #                  FloatTensor([reward]))
-
-
             if is_terminal:
                 # store the transition in memory
                 next_state = None
                 self.memory.store(FloatTensor([state]),
-                                  action,
+                                  LongTensor([action]),
                                   None,
                                   FloatTensor([reward]))
             else:
                 self.memory.store(FloatTensor([state]),
-                                  action,
+                                  LongTensor([action]),
                                   FloatTensor([next_state]),
                                   FloatTensor([reward]))
 
@@ -300,9 +291,8 @@ class Agent(object):
         #state is 210,160,3            
 
         for i in range(1000):
-            #action = random.randrange(self.env.action_space.n)
-            action = LongTensor([[random.randrange(self.env.action_space.n)]])
-            next_state, reward, is_terminal, _ = self.env.step(action[0,0])
+            action = random.randrange(self.env.action_space.n)
+            next_state, reward, is_terminal, _ = self.env.step(action)
             print(reward,is_terminal)
             self.env.render()
         print('Random play done now')
@@ -336,7 +326,7 @@ class Agent(object):
             self.env.render(mode='rgb_array')
             action = self.select_action([state],train)
             # print("action: ", action)
-            next_state_single, reward, is_terminal, _ = self.env.step(action[0,0])
+            next_state_single, reward, is_terminal, _ = self.env.step(action)
 
             #next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
             next_state_single = pre_process(next_state_single)
@@ -352,7 +342,7 @@ class Agent(object):
                 
                 next_state = None
                 self.memory.store(FloatTensor([state]),
-                                  action,
+                                  LongTensor([action]),
                                   None,
                                   FloatTensor([reward]))
                 if train:
@@ -368,7 +358,7 @@ class Agent(object):
                 return total_reward
             else:
                 self.memory.store(FloatTensor([state]),
-                                  action,
+                                  LongTensor([action]),
                                   FloatTensor([next_state]),
                                   FloatTensor([reward]))
 
@@ -396,17 +386,15 @@ class Agent(object):
         if sum(non_terminal_mask) == 0: 
             return
 
-        with torch.no_grad():
-            batch_next_state = Variable(torch.cat([s for s in batch.next_state if s is not None]))
-
-        batch_state = Variable(torch.cat(batch.state))
-        batch_action = Variable(torch.cat(batch.action))
-        batch_reward = Variable(torch.cat(batch.reward))
+        batch_next_state = torch.cat([s for s in batch.next_state if s is not None])
+        batch_state = torch.cat(batch.state)
+        batch_action = torch.cat(batch.action)
+        batch_reward = torch.cat(batch.reward)
 
         # There is no separate target Q-network implemented and all updates are done
         # synchronously at intervals of 1 unlike in the original paper
         # current Q-values: gather(dim, index) return the elements along the dim axis with given index.
-        current_Q = self.model(batch_state).gather(1, batch_action)
+        current_Q = self.model(batch_state).gather(1, batch_action.view([-1,1]))
         # expected Q-values (target)
         max_next_Q = self.model(batch_next_state).detach().max(1)[0]
         
@@ -428,8 +416,8 @@ class Agent(object):
         self.optimizer.step()
 
         # TODO write average reward and loss after each batch training
-        self.writer.add_scalar('avg_reward/train', sum(current_Q), e)
-        self.writer.add_scalar('avg_loss/train', sum(loss), e)
+        #self.writer.add_scalar('avg_reward/train', sum(current_Q), e)
+        #self.writer.add_scalar('avg_loss/train', sum(loss), e)
 
     def plot_durations(self):
         durations = torch.FloatTensor(self.episode_durations)
@@ -494,7 +482,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Deep Q Network Argument Parser')
     parser.add_argument('--env',type=str, default='SpaceInvaders-v0')
     parser.add_argument('--render',type=int,default=0)
-    parser.add_argument('--model_type',type=str, default='Space_Invaders_CNN',help ='Model type one of (linear,dqn,duel)')
+    parser.add_argument('--model_type',type=str, default='CNN_2c2f',help ='Model type one of (linear,dqn,duel)')
     parser.add_argument('--exp_replay', type=int, default=1, help='should experience replay be used, default 1')
     parser.add_argument('--num_episodes', type=int, default=10, help='number of episodes')
     parser.add_argument('--batch_size', type=int, default=2, help='batch size')
