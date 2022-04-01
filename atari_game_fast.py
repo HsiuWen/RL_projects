@@ -18,16 +18,27 @@ import torchvision.transforms as T
 from torchvision import transforms
 from tensorboardX import SummaryWriter
 
-import pdb
-
 # if gpu is to be used
-use_cuda = torch.cuda.is_available()
-FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
-LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
+### Classes to deal replay the game for training
+Transition = namedtuple('Transition',
+                        ('state', 'action', 'next_state', 'reward'))
 
+class ReplayMemory(object):
 
+    def __init__(self, capacity):
+        self.memory = deque([],maxlen=capacity)
+
+    def push(self, *args):
+        """Save a transition"""
+        self.memory.append(Transition(*args))
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
 
 class CNN_2c2f(nn.Module):
     def __init__(self):
@@ -99,24 +110,6 @@ class DuelingDQN(nn.Module):
         x = val + adv - adv.mean(1).unsqueeze(1).expand(x.size(0), self.n_actions)
         return x
 
-class ReplayMemory(object):
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.memory = []
-        self.position = 0
-
-    def store(self, *args):
-        if len(self.memory) < self.capacity:
-            self.memory.append(None)
-        self.memory[self.position] = Transition(*args)
-        self.position = (self.position + 1) % self.capacity
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-
 pre_process = transforms.Compose([
     transforms.ToTensor(),
     transforms.Grayscale(),
@@ -151,17 +144,13 @@ class Agent(object):
 
         # type of function approximator to use
         if args.model_type == 'CNN_2c2f':        
-            self.model = CNN_2c2f()
+            self.model = CNN_2c2f().to(device)
         elif args.model_type == 'linear':
-            self.model = LinearQN(n_in, n_out)
+            self.model = LinearQN(n_in, n_out).to(device)
         elif args.model_type == 'dqn':
-            self.model = DQN(n_in, args.n_hidden, n_out)
+            self.model = DQN(n_in, args.n_hidden, n_out).to(device)
         else:
-            self.model = DuelingDQN(n_in, args.n_hidden, n_out)
-
-
-        if use_cuda:
-            self.model.cuda()
+            self.model = DuelingDQN(n_in, args.n_hidden, n_out).to(device)
 
         # should experience replay be used
         if args.exp_replay:
@@ -204,7 +193,6 @@ class Agent(object):
         
 
     def select_action(self, state, train):
-        state = FloatTensor(state)
         if train:
             self.steps_done += 1
         # action will be selected based on the policy type : greedy or epsilon-greedy
@@ -221,7 +209,7 @@ class Agent(object):
                     action = self.model(state)
                 return action.data.max(1)[1].view(1,1)
             else:
-                return random.randrange(self.env.action_space.n)
+                return torch.tensor([[random.randrange(self.env.action_space.n)]],device = device, dtype=torch.long)
         else:
             with torch.no_grad():
                action = self.model(state)
@@ -232,8 +220,8 @@ class Agent(object):
     def burn_memory(self):
 
         steps = 0
-        state = np.zeros((4,84,84))
-        next_state = np.zeros((4,84,84))
+        state = torch.zeros(4,84,84)
+        next_state = torch.zeros(4,84,84)
 
         state_single = self.env.reset()
         #state_single = rgb2gray(resize(state_single,(84,84)))
@@ -248,8 +236,9 @@ class Agent(object):
         print('Starting to fill the memory with random policy')
         while steps < self.memory_burn_limit:
             #Executing a random policy
-            action = random.randrange(self.env.action_space.n)
-            next_state_single, reward, is_terminal, _ = self.env.step(action)                
+            action = torch.tensor([[random.randrange(self.env.action_space.n)]], device=device, dtype=torch.long)
+            next_state_single, reward, is_terminal, _ = self.env.step(action)   
+            reward = torch.tensor([reward], device = device)             
             #next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
             next_state_single = pre_process(next_state_single)
 
@@ -258,20 +247,10 @@ class Agent(object):
             next_state[2,:,:] = state[3,:,:]
             next_state[3,:,:] = next_state_single
 
-            if is_terminal:
-                # store the transition in memory
-                next_state = None
-                self.memory.store(FloatTensor([state]),
-                                  LongTensor([action]),
-                                  None,
-                                  FloatTensor([reward]))
-            else:
-                self.memory.store(FloatTensor([state]),
-                                  LongTensor([action]),
-                                  FloatTensor([next_state]),
-                                  FloatTensor([reward]))
+            # Store the transition in memory
+            self.memory.push(state, action, next_state, reward)
 
-
+            # Move to next step
             steps += 1
             state = next_state
 
@@ -313,8 +292,8 @@ class Agent(object):
 
         state_single = pre_process(state_single)
             
-        state = np.zeros((4,84,84))
-        next_state = np.zeros((4,84,84))
+        state = torch.zeros(4,84,84)
+        next_state = torch.zeros(4,84,84)
 
         state[0,:,:] = state_single
         state[1,:,:] = state_single
@@ -332,7 +311,7 @@ class Agent(object):
             action = self.select_action([state],train)
             # print("action: ", action)
             next_state_single, reward, is_terminal, _ = self.env.step(action)
-
+            reward = torch.tensor([reward], device = device)
             #next_state_single = rgb2gray(resize(next_state_single,(84,84))) 
             next_state_single = pre_process(next_state_single)
             next_state[0,:,:] = state[1,:,:]
@@ -342,34 +321,24 @@ class Agent(object):
 
             total_reward += reward
 
+            # store the transition in memory
+            self.memory.push(state, action, next_state, reward)
             if is_terminal:
-                # store the transition in memory
-                
-                next_state = None
-                self.memory.store(FloatTensor([state]),
-                                  LongTensor([action]),
-                                  None,
-                                  FloatTensor([reward]))
-                if train:
-                    self.writer.add_scalar('total_reward/train', total_reward, e)
-                    self.writer.add_scalar('episode_duration/train', steps, e)
-                    self.episode_durations.append(steps)
-                    print("Episode {} completed after {} steps | Total steps = {} | Total reward = {}".format(e,steps,self.steps_done, total_reward))
-                    if self.record_video >0 and e%self.record_video == 0:
-                        out.release()
-                    # self.plot_durations()
-                    # self.plot_rewards()  
-
+                self.writer.add_scalar('total_reward/train', total_reward, e)
+                self.writer.add_scalar('episode_duration/train', steps, e)
+                self.episode_durations.append(steps)
+                print("Episode {} completed after {} steps | Total steps = {} | Total reward = {}".format(e,steps,self.steps_done, total_reward))
+                if self.record_video >0 and e%self.record_video == 0:
+                    out.release()
+                self.plot_durations()
+                # self.plot_rewards()  
                 return total_reward
-            else:
-                self.memory.store(FloatTensor([state]),
-                                  LongTensor([action]),
-                                  FloatTensor([next_state]),
-                                  FloatTensor([reward]))
 
             if train:
                 # backprop and learn; otherwise just play the policy
                 self.optimize_model()
+                
+                
             # update state
             state = next_state
             steps += 1  
@@ -378,19 +347,19 @@ class Agent(object):
         # check if enough experience collected so far
         # the agent continues with a random policy without updates till then
         if len(self.memory) < self.batch_size:
-            return
+            return 
 
         self.optimizer.zero_grad()
         # sample a random batch from the replay memory to learn from experience
         # for no experience replay the batch size is 1 and hence learning online
         transitions = self.memory.sample(self.batch_size)
         batch = Transition(*zip(*transitions))
-        # isolate the values
-        non_terminal_mask = np.array(list(map(lambda s: s is not None, batch.next_state)))
-        # all ternimal states, then terminate the training
-        if sum(non_terminal_mask) == 0: 
-            return
 
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                            batch.next_state)), device=device, dtype=torch.bool)
+        #TODO debug the way to make the dim to [B, C W H]
         batch_next_state = torch.cat([s for s in batch.next_state if s is not None])
         batch_state = torch.cat(batch.state)
         batch_action = torch.cat(batch.action)
@@ -401,14 +370,10 @@ class Agent(object):
         # current Q-values: gather(dim, index) return the elements along the dim axis with given index.
         current_Q = self.model(batch_state).gather(1, batch_action.view([-1,1]))
         # expected Q-values (target)
-        max_next_Q = self.model(batch_next_state).detach().max(1)[0]
-        
-        if use_cuda:
-            expected_Q = batch_reward.cuda()
-            expected_Q[non_terminal_mask] += (self.gamma * max_next_Q)
-        else:
-            expected_Q = batch_reward.cpu()
-            expected_Q[non_terminal_mask] += (self.gamma * max_next_Q).data
+        max_next_Q = torch.zeros(self.batch_size, device=device)
+        max_next_Q[non_final_mask] = self.model(batch_next_state).max(1)[0].detach()
+
+        expected_Q = (self.gamma * max_next_Q).data + batch_reward
 
         # loss between current Q values and target Q values
         if self.loss_fn == 'l1':
@@ -420,9 +385,10 @@ class Agent(object):
         loss.backward()
         self.optimizer.step()
 
+        return batch_reward.sum() # return the average of reward of the training data for reference
+        
         # TODO write average reward and loss after each batch training
-        #self.writer.add_scalar('avg_reward/train', sum(current_Q), e)
-        #self.writer.add_scalar('avg_loss/train', sum(loss), e)
+        #self.writer.add_scalar('avg_loss/train', loss.mean(), e)
 
     def plot_durations(self):
         durations = torch.FloatTensor(self.episode_durations)
