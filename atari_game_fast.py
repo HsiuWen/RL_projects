@@ -142,6 +142,10 @@ class Agent(object):
         self.record_video = args.record_video
         self.save_model_every_epoch = args.save_model_every_epoch
 
+        # Check if the folder exist to save the model dict
+        if not os.path.exists(f'saved_models/{self.game_name}'):
+            os.makedirs(f'saved_models/{self.game_name}')
+
         # writer to write data to tensorboard
         self.writer = SummaryWriter()
 
@@ -196,7 +200,8 @@ class Agent(object):
             checkpoint = torch.load(args.model_path)
             self.model.load_stae_dict(checkpoint(['model_state_dict']))
             self.optimizer.load_state_dict(checkpoint(['optimizer_state_dict']))
-        #pdb.set_trace()
+        
+        
 
     def select_action(self, state, train):
         state = FloatTensor(state)
@@ -222,7 +227,7 @@ class Agent(object):
                action = self.model(state)
             return action.data.max(1)[1].view(1,1)
 
-    # Here we'lldeal with the empty memory problem: we pre-populate our memory by taking random actions 
+    # Here we'll deal with the empty memory problem: we pre-populate our memory by taking random actions 
     # and storing the experience (state, action, reward, next_state).
     def burn_memory(self):
 
@@ -323,7 +328,7 @@ class Agent(object):
             if self.record_video >0 and e%self.record_video == 0:
                 out.write(self.env.render('rgb_array'))
                 
-            self.env.render(mode='rgb_array')
+            #self.env.render(mode='rgb_array')
             action = self.select_action([state],train)
             # print("action: ", action)
             next_state_single, reward, is_terminal, _ = self.env.step(action)
@@ -349,7 +354,7 @@ class Agent(object):
                     self.writer.add_scalar('total_reward/train', total_reward, e)
                     self.writer.add_scalar('episode_duration/train', steps, e)
                     self.episode_durations.append(steps)
-                    print("Episode {} completed after {} steps | Total steps = {}".format(e,steps,self.steps_done))
+                    print("Episode {} completed after {} steps | Total steps = {} | Total reward = {}".format(e,steps,self.steps_done, total_reward))
                     if self.record_video >0 and e%self.record_video == 0:
                         out.release()
                     # self.plot_durations()
@@ -523,7 +528,7 @@ def main():
     #pdb.set_trace()
     agent.train()
     print('----------- Completed Training -----------')
-    agent.test(num_episodes=100)
+    agent.test(num_episodes=10)
     print('----------- Completed Testing -----------')
 
     agent.close()
