@@ -220,8 +220,8 @@ class Agent(object):
     def burn_memory(self):
 
         steps = 0
-        state = torch.zeros(4,84,84)
-        next_state = torch.zeros(4,84,84)
+        state = torch.zeros(4,84,84, device = device)
+        next_state = torch.zeros(4,84,84, device =device)
 
         state_single = self.env.reset()
         #state_single = rgb2gray(resize(state_single,(84,84)))
@@ -292,8 +292,8 @@ class Agent(object):
 
         state_single = pre_process(state_single)
             
-        state = torch.zeros(4,84,84)
-        next_state = torch.zeros(4,84,84)
+        state = torch.zeros(4,84,84,device = device)
+        next_state = torch.zeros(4,84,84,device = device)
 
         state[0,:,:] = state_single
         state[1,:,:] = state_single
@@ -360,10 +360,10 @@ class Agent(object):
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                             batch.next_state)), device=device, dtype=torch.bool)
         #TODO debug the way to make the dim to [B, C W H]
-        batch_next_state = torch.cat([s for s in batch.next_state if s is not None])
-        batch_state = torch.cat(batch.state)
-        batch_action = torch.cat(batch.action)
-        batch_reward = torch.cat(batch.reward)
+        batch_next_state = torch.stack([s for s in batch.next_state if s is not None])
+        batch_state = torch.stack(batch.state)
+        batch_action = torch.stack(batch.action)
+        batch_reward = torch.stack(batch.reward)
 
         # There is no separate target Q-network implemented and all updates are done
         # synchronously at intervals of 1 unlike in the original paper
