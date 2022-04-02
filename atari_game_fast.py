@@ -206,13 +206,13 @@ class Agent(object):
             # explore or exploit?
             if random.random() > eps_threshold:
                 with torch.no_grad():
-                    action = self.model(state)
+                    action = self.model(state[None,:])
                 return action.data.max(1)[1].view(1,1)
             else:
                 return torch.tensor([[random.randrange(self.env.action_space.n)]],device = device, dtype=torch.long)
         else:
             with torch.no_grad():
-               action = self.model(state)
+               action = action = self.model(state[None,:])
             return action.data.max(1)[1].view(1,1)
 
     # Here we'll deal with the empty memory problem: we pre-populate our memory by taking random actions 
@@ -308,7 +308,7 @@ class Agent(object):
                 out.write(self.env.render('rgb_array'))
                 
             #self.env.render(mode='rgb_array')
-            action = self.select_action([state],train)
+            action = self.select_action(state,train)
             # print("action: ", action)
             next_state_single, reward, is_terminal, _ = self.env.step(action)
             reward = torch.tensor([reward], device = device)
@@ -338,7 +338,6 @@ class Agent(object):
                 # backprop and learn; otherwise just play the policy
                 self.optimize_model()
                 
-                
             # update state
             state = next_state
             steps += 1  
@@ -359,7 +358,7 @@ class Agent(object):
         # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                             batch.next_state)), device=device, dtype=torch.bool)
-        #TODO debug the way to make the dim to [B, C W H]
+        
         batch_next_state = torch.stack([s for s in batch.next_state if s is not None])
         batch_state = torch.stack(batch.state)
         batch_action = torch.stack(batch.action)
