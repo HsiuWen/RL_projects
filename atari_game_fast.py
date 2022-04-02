@@ -327,7 +327,7 @@ class Agent(object):
                 self.writer.add_scalar('total_reward/train', total_reward, e)
                 self.writer.add_scalar('episode_duration/train', steps, e)
                 self.episode_durations.append(steps)
-                print("Episode {} completed after {} steps | Total steps = {} | Total reward = {}".format(e,steps,self.steps_done, total_reward))
+                print("Episode {} completed after {} steps | Total steps = {} | Total reward = {}".format(e,steps,self.steps_done, total_reward.item()))
                 if self.record_video >0 and e%self.record_video == 0:
                     out.release()
                 self.plot_durations()
