@@ -373,13 +373,13 @@ class Agent(object):
         max_next_Q = torch.zeros(self.batch_size, device=device)
         max_next_Q[non_final_mask] = self.model(batch_next_state).max(1)[0].detach()
 
-        expected_Q = (self.gamma * max_next_Q).data + batch_reward
+        expected_Q = (self.gamma * max_next_Q.view([-1,1])).data + batch_reward
 
         # loss between current Q values and target Q values
         if self.loss_fn == 'l1':
-            loss = F.smooth_l1_loss(current_Q, expected_Q.view([-1,1]))
+            loss = F.smooth_l1_loss(current_Q, expected_Q)
         else:
-            loss = F.mse_loss(current_Q, expected_Q.view([-1,1]))
+            loss = F.mse_loss(current_Q, expected_Q)
 
         # backprop the loss
         loss.backward()
